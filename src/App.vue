@@ -1,24 +1,8 @@
 <template>
   <div class="container">
-    <div v-if="currentSection === 'menu'" class="main-menu">
-      <h1>户外活动管理系统</h1>
-      <div class="menu-buttons">
-        <button @click="currentSection = 'finance'" class="menu-btn finance-btn">
-          <span class="btn-title">收支计算</span>
-          <span class="btn-desc">计算活动收支情况</span>
-        </button>
-        <button @click="currentSection = 'salary'" class="menu-btn salary-btn">
-          <span class="btn-title">薪资分配</span>
-          <span class="btn-desc">计算人员薪资分配</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- 收支计算板块 -->
-    <div v-else-if="currentSection === 'finance'" class="section">
+    <div class="section">
       <div class="section-header">
-        <button @click="currentSection = 'menu'" class="back-btn">返回主菜单</button>
-        <h1>收支计算器</h1>
+        <h1>收支与薪资分配</h1>
       </div>
       <div class="calculator">
         <div class="panels">
@@ -45,7 +29,6 @@
               <input type="text" v-model="newIncome.remark" placeholder="请输入备注">
             </div>
             <button @click="addIncome" class="add-btn income-btn">添加收入</button>
-            
             <div class="records">
               <div v-for="(item, index) in incomeItems" :key="index" class="record-item income">
                 <div class="record-info">
@@ -59,7 +42,6 @@
               </div>
             </div>
           </div>
-
           <!-- 支出面板 -->
           <div class="panel expense-panel">
             <h2>支出</h2>
@@ -87,7 +69,6 @@
               <input type="text" v-model="newExpense.remark" placeholder="请输入备注">
             </div>
             <button @click="addExpense" class="add-btn expense-btn">添加支出</button>
-            
             <div class="records">
               <div v-for="(item, index) in expenseItems" :key="index" class="record-item expense">
                 <div class="record-info">
@@ -102,27 +83,16 @@
             </div>
           </div>
         </div>
-
         <div class="summary-section">
           <h2>收支汇总</h2>
           <div class="summary">
             <p class="income-text">总收入：¥{{ totalIncome.toFixed(2) }}</p>
             <p class="expense-text">总支出：¥{{ totalExpense.toFixed(2) }}</p>
-            <p class="balance-text">结余：¥{{ balance.toFixed(2) }}</p>
+            <p class="balance-text">结余（可分配）：¥{{ balance.toFixed(2) }}</p>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- 薪资分配板块 -->
-    <div v-else-if="currentSection === 'salary'" class="section">
-      <div class="section-header">
-        <button @click="currentSection = 'menu'" class="back-btn">返回主菜单</button>
-        <h1>薪资分配</h1>
-      </div>
-      <div class="salary-calculator">
         <div class="form-panel">
-          <h2>基本信息</h2>
+          <h2>薪资分配</h2>
           <div class="form-group">
             <label>外来领队人数：</label>
             <select v-model="salaryInfo.externalLeaders">
@@ -131,17 +101,24 @@
               <option value="2">2人</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>总收入：</label>
-            <input type="number" v-model="salaryInfo.totalIncome" min="0" step="0.01">
+          <div v-for="person in persons" :key="person.name" class="form-group">
+            <label>{{ person.name }}：</label>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <label v-for="role in roles" :key="role.value" style="font-weight: normal;">
+                <input type="checkbox" v-model="person.selectedRoles" :value="role.value"> {{ role.label }}
+              </label>
+            </div>
           </div>
-          <div class="form-group">
-            <label>总支出：</label>
-            <input type="number" v-model="salaryInfo.totalExpense" min="0" step="0.01">
+        </div>
+        <div class="form-panel">
+          <h2>分配结果</h2>
+          <div v-for="person in persons" :key="person.name" style="margin-bottom: 10px;">
+            <strong>{{ person.name }}：</strong> ¥{{ autoSalaryResult[person.name]?.toFixed(2) || '0.00' }}
           </div>
-          <div class="result-panel">
-            <h3>可分配金额</h3>
-            <p class="amount">¥{{ distributableMoney.toFixed(2) }}</p>
+          <div v-if="autoSalaryResult.externalLeaders && autoSalaryResult.externalLeaders.length">
+            <div v-for="(amt, idx) in autoSalaryResult.externalLeaders" :key="idx">
+              <strong>外来领队{{ idx + 1 }}：</strong> ¥{{ amt.toFixed(2) }}
+            </div>
           </div>
         </div>
       </div>
@@ -150,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 // 当前显示的板块
 const currentSection = ref('menu')
@@ -232,14 +209,80 @@ const balance = computed(() => {
 
 // 薪资分配相关数据
 const salaryInfo = ref({
-  externalLeaders: 0,
-  totalIncome: 0,
-  totalExpense: 0
+  externalLeaders: 0
 })
 
 // 计算可分配金额
-const distributableMoney = computed(() => {
-  return Math.max(0, salaryInfo.value.totalIncome - salaryInfo.value.totalExpense)
+const distributableMoney = balance // balance 直接作为可分配金额
+
+const roles = [
+  { label: '带线', value: 'guide' },
+  { label: '客服', value: 'service' },
+  { label: '宣传', value: 'promotion' },
+  { label: '路线', value: 'route' },
+  { label: '外联', value: 'liaison' }
+]
+
+const persons = ref([
+  { name: 'A', selectedRoles: [] },
+  { name: 'B', selectedRoles: [] },
+  { name: 'C', selectedRoles: [] },
+  { name: 'D', selectedRoles: [] }
+])
+
+const autoSalaryResult = computed(() => {
+  const total = balance.value
+  if (total <= 0) {
+    return { A: 0, B: 0, C: 0, D: 0, externalLeaders: [] }
+  }
+  const baseRate = 0.08
+  const workRates = {
+    guide: 0.3,
+    service: 0.15,
+    promotion: 0.15,
+    route: 0.2,
+    liaison: 0.2
+  }
+  const extLeaderNum = Number(salaryInfo.value.externalLeaders)
+  let extLeaderRates = []
+  if (extLeaderNum === 1) extLeaderRates = [0.2]
+  if (extLeaderNum === 2) extLeaderRates = [0.15, 0.15]
+  // 1. 基础工资
+  const baseSalary = total * baseRate
+  // 2. 外来领队分成
+  let extLeaderAmounts = extLeaderRates.map(r => total * r)
+  let left = total - extLeaderAmounts.reduce((a, b) => a + b, 0)
+  // 3. abcd基础工资
+  let abcdBase = baseSalary * 4
+  left -= abcdBase
+  // 4. 分工分配
+  let workPool = {}
+  Object.keys(workRates).forEach(role => {
+    workPool[role] = left > 0 ? left * workRates[role] : 0
+  })
+  // 统计每个角色有几个人
+  let roleCount = {}
+  Object.keys(workRates).forEach(role => {
+    roleCount[role] = persons.value.filter(p => p.selectedRoles.includes(role)).length
+  })
+  // 计算每个人的分工分配
+  let personWork = {}
+  persons.value.forEach(p => {
+    let sum = 0
+    p.selectedRoles.forEach(role => {
+      if (roleCount[role] > 0) {
+        sum += workPool[role] / roleCount[role]
+      }
+    })
+    personWork[p.name] = sum
+  })
+  // 5. 汇总
+  let result = {}
+  persons.value.forEach(p => {
+    result[p.name] = baseSalary + (personWork[p.name] || 0)
+  })
+  result.externalLeaders = extLeaderAmounts
+  return result
 })
 </script>
 
